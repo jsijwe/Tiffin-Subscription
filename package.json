@@ -1,0 +1,27 @@
+{
+  "name": "tiffin-service",
+  "version": "3.0.0",
+  "description": "Full-stack tiffin subscription operations: persistent customers, fair billing, delivery notifications, messy-data import and mid-cycle subscription transfers",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test tests/billing.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "helmet": "^7.1.0",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.4.0",
+    "swagger-ui-express": "^5.0.1",
+    "yamljs": "^0.3.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

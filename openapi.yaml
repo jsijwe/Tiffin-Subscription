@@ -1,0 +1,324 @@
+openapi: 3.0.3
+info:
+  title: TiffinBook API
+  description: >
+    Subscription management and pro-rated billing for home-style tiffin
+    (lunch delivery) services. All `/api/customers/*` routes are scoped to
+    the logged-in owner and require a Bearer token from register/login.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Customer:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        owner_id: { type: integer, example: 1 }
+        name: { type: string, example: "Riya Sharma" }
+        phone: { type: string, example: "9876543210" }
+        plan_price: { type: number, example: 3000 }
+        status: { type: string, enum: [active, paused], example: active }
+        created_at: { type: string, format: date-time }
+        cycle_start: { type: string, format: date }
+        transfer_to_customer_id: { type: integer, nullable: true }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+paths:
+  /api/auth/register:
+    post:
+      summary: Create an owner account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: "owner@example.com" }
+                password: { type: string, example: "hunter22" }
+      responses:
+        '201': { description: 'Account created; returns token and email' }
+        '400': { description: Invalid input, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Email already registered }
+
+  /api/auth/login:
+    post:
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: 'Returns token and email' }
+        '401': { description: Invalid credentials }
+
+  /api/customers:
+    post:
+      summary: Subscribe a new customer
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, phone, planPrice]
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                planPrice: { type: number }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } } }
+        '400': { description: Validation error }
+        '409': { description: Phone number already in use by this owner }
+    get:
+      summary: List customers (search, filter, sort, paginate)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+          description: Matches name or phone (partial, case-insensitive)
+        - in: query
+          name: status
+          schema: { type: string, enum: [active, paused] }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [name, phone, plan_price, status, created_at] }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: Paginated customer list }
+
+  /api/customers/stats/summary:
+    get:
+      summary: Dashboard analytics (counts + this month's estimated revenue)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: "{ total, active, paused, year, month, estimatedRevenue }" }
+
+  /api/customers/export.csv:
+    get:
+      summary: Download a CSV of every customer's bill for a given month
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: year
+          schema: { type: integer }
+        - in: query
+          name: month
+          schema: { type: integer, minimum: 1, maximum: 12 }
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+
+  /api/customers/phone/{phone}:
+    get:
+      summary: Look up a customer by phone number
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: phone
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Customer found }
+        '404': { description: No customer with that phone number }
+
+  /api/customers/{id}:
+    get:
+      summary: Get one customer plus their pause history
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Customer with pausePeriods array }
+        '404': { description: Not found }
+
+  /api/customers/{id}/pause:
+    post:
+      summary: Pause a customer
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from: { type: string, format: date, example: "2026-09-10" }
+      responses:
+        '200': { description: Customer now paused }
+        '404': { description: Not found }
+        '409': { description: Already paused }
+
+  /api/customers/{id}/resume:
+    post:
+      summary: Resume a paused customer
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: string, format: date, example: "2026-09-15" }
+      responses:
+        '200': { description: Customer now active }
+        '404': { description: Not found }
+        '409': { description: Not currently paused }
+
+  /api/customers/import:
+    post:
+      summary: Import a messy customer list
+      description: Accepts JSON rows or raw CSV, cleans common phone/date formats, deduplicates phones and returns an import report.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: array
+                  items: { type: object }
+                - type: object
+                  properties:
+                    rows:
+                      type: array
+                      items: { type: object }
+          text/csv:
+            schema: { type: string }
+      responses:
+        '201': { description: Import report with imported, deduped and rejected counts }
+        '400': { description: No import rows found }
+
+  /api/customers/{id}/transfer:
+    post:
+      summary: Transfer a subscription to a new customer mid-cycle
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, phone, effectiveOn]
+              properties:
+                name: { type: string }
+                phone: { type: string }
+                effectiveOn: { type: string, format: date }
+      responses:
+        '201': { description: Transfer created; new customer inherits plan and cycle start }
+        '400': { description: Invalid transfer input }
+        '404': { description: Source customer not found }
+        '409': { description: Subscription already transferred or not active }
+
+  /api/customers/{id}/bill:
+    get:
+      summary: Pro-rated bill for a given month (defaults to the current month)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: year
+          schema: { type: integer }
+        - in: query
+          name: month
+          schema: { type: integer, minimum: 1, maximum: 12 }
+      responses:
+        '200': { description: "{ customer, year, month, planPrice, totalWeekdays, pausedWeekdays, deliveredDays, amount }" }
+        '404': { description: Not found }
+
+
+  /api/notifications/clock:
+    post:
+      summary: Run the morning delivery notification clock
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date: { type: string, format: date }
+      responses:
+        '200': { description: Queued delivery reminders for active, non-paused customers on weekdays }
+
+  /api/notifications/outbox:
+    get:
+      summary: Read the notification outbox
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: Durable queued notification messages }
+
+  /clock:
+    post:
+      summary: Assessment alias for the notification clock
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification clock result }
+
+  /outbox:
+    get:
+      summary: Assessment alias for the notification outbox
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification outbox rows }
+
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: "{ ok: true, dbFileExists: true }" }

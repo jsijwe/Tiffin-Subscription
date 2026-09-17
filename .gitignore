@@ -1,0 +1,6 @@
+node_modules/
+tiffin.db
+tiffin.db-wal
+tiffin.db-shm
+.env
+coverage/
